@@ -9,13 +9,9 @@ from sqlalchemy import create_engine, Column, Integer, Text, TIMESTAMP
 from sqlalchemy.orm import sessionmaker, declarative_base
 import datetime
 import os
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv(r'C:\Users\s.anumandla\Desktop\QnA chatbot\.env')
-
-# Database Configuration
-DATABASE_URL = "postgresql://postgres:1234@localhost:5432/chatbotdb"
+# Database Configuration (Using Streamlit Secrets)
+DATABASE_URL = st.secrets["DATABASE_URL"]
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine)
 Base = declarative_base()
@@ -28,31 +24,30 @@ class Document(Base):
     content = Column(Text, nullable=False)
     uploaded_at = Column(TIMESTAMP, default=datetime.datetime.utcnow)
 
-# Create Database Tables
+# Create Database Tables (if not exists)
 Base.metadata.create_all(engine)
 
 # Initialize Ollama LLM
-llm = Ollama(model="llama3.2")  # Corrected model name
+llm = Ollama(model="llama3.2")
 
 # Streamlit UI
-st.title("PDF Chatbot")
+st.title("PDF QnA Chatbot")
 
 # Sidebar for File Upload
 st.sidebar.header("Upload a PDF")
 uploaded_file = st.sidebar.file_uploader("Choose a PDF file", type=["pdf"])
 
-# Initialize FAISS vector store
 vector_db = None
 
 if uploaded_file:
     st.sidebar.success(f"Uploaded: {uploaded_file.name}")
-    
+
     with st.spinner("Processing document..."):
         try:
             pdf_reader = PyPDF2.PdfReader(uploaded_file)
-            content = "\n".join([page.extract_text() for page in pdf_reader.pages if page.extract_text() is not None])
+            content = "\n".join([page.extract_text() for page in pdf_reader.pages if page.extract_text()])
 
-            # Store document in the database (prevent duplicates)
+            # Store document in the database (Prevent Duplicates)
             db = SessionLocal()
             existing_doc = db.query(Document).filter(Document.filename == uploaded_file.name).first()
             if not existing_doc:
@@ -67,8 +62,8 @@ if uploaded_file:
             text_splitter = CharacterTextSplitter(chunk_size=500, chunk_overlap=50)
             texts = text_splitter.split_text(content)
 
-            # Create embeddings and store in FAISS
-            embeddings = OllamaEmbeddings(model="nomic-embed-text")  # Use Ollama embeddings
+            # Create FAISS vector database
+            embeddings = OllamaEmbeddings(model="nomic-embed-text")
             vector_db = FAISS.from_texts(texts, embeddings)
 
             st.sidebar.success("Document processed successfully!")
@@ -79,7 +74,6 @@ if uploaded_file:
 # Chatbot Section
 st.header("Ask Questions")
 
-# User Input
 user_question = st.text_input("Enter your question:")
 
 if user_question and vector_db:
